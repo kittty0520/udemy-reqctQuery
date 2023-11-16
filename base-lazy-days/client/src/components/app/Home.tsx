@@ -1,10 +1,13 @@
 import { Icon, Stack, Text } from '@chakra-ui/react';
+import { useFetchTreatments } from 'components/treatments/hooks/useTreatments';
 import { ReactElement } from 'react';
 import { GiFlowerPot } from 'react-icons/gi';
 
 import { BackgroundImage } from '../common/BackgroundImage';
 
 export function Home(): ReactElement {
+  useFetchTreatments();
+
   return (
     <Stack textAlign="center" justify="center" height="84vh">
       <BackgroundImage />
