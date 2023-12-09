@@ -1,6 +1,11 @@
-import { UseMutateFunction, useMutation } from '@tanstack/react-query';
+import {
+  UseMutateFunction,
+  useMutation,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useCustomToast } from 'components/app/hooks/useCustomToast';
 import jsonpatch from 'fast-json-patch';
+import { queryKeys } from 'react-query/constants';
 
 import type { User } from '../../../../../shared/types';
 import { axiosInstance, getJWTHeader } from '../../../axiosInstance';
@@ -34,16 +39,48 @@ export function usePatchUser(): UseMutateFunction<
 > {
   const { user, updateUser } = useUser();
   const toast = useCustomToast();
+  const queryClient = useQueryClient();
+
   const { mutate: patchUser } = useMutation({
-    mutationFn: (newUserData: User) => patchUserOnServer(newUserData, user),
+    mutationFn: (newData: User) => patchUserOnServer(newData, user),
+    // onMutate returns context that is passsed to onError
+    onMutate: async (newData: User | null) => {
+      // user Data에 대해 진행중인 쿼리를 취소하여 오래된 서버 데이터가
+      // 낙관적 업데이트를 오버라이드 하지 않도록 한다.
+      queryClient.cancelQueries({ queryKey: [queryKeys.user], exact: true });
+
+      // 이전 user data를 스냅샷한다.
+      const previousUserData: User = queryClient.getQueryData([queryKeys.user]);
+
+      // optimistically update the cache with new user value
+      updateUser(newData);
+
+      // return context object with snapshotted value
+      return { previousUserData };
+    },
     onSuccess: (newUserData: User | null) => {
       if (user) {
-        updateUser(newUserData);
         toast({
           title: 'The user information has updated',
           status: 'success',
         });
       }
+    },
+    onError: (error, newData, context) => {
+      // roll back cache to saved value
+      if (context.previousUserData) {
+        updateUser(context.previousUserData);
+        toast({
+          title: 'Update failed : restoring previous values',
+          status: 'warning',
+        });
+      }
+    },
+    onSettled: () => {
+      // invalidate user query to make sure we're in sync with server data
+      queryClient.invalidateQueries({
+        queryKey: [queryKeys.user],
+      });
     },
   });
 
